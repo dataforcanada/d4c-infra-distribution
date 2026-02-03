@@ -1,0 +1,7 @@
+[project]
+name = "01-automate-torrent-file-creation"
+version = "0.1.0"
+requires-python = ">=3.14"
+dependencies = [
+    "py3createtorrent>=1.2.1",
+]
