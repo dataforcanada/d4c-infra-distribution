@@ -11,8 +11,8 @@ py3createtorrent \
     --md5 \
     --source "Data for Canada" \
     --comment "City of Edmonton Orthoimagery for 2023 / Ortho-imagerie de la Ville de Edmonton de 2023" \
-    --tracker "udp://tracker.labs.dataforcanada.org:6969/announce" \
-    --webseed "https://data-01.labs.dataforcanada.org/processed/ca-ab_edmonton-2023A00054811061_orthoimagery_2023_075mm.pmtiles" \
+    --tracker "https://tracker.labs.dataforcanada.org/announce" \
+    --webseed "https://data-02.labs.dataforcanada.org/processed/ca-ab_edmonton-2023A00054811061_orthoimagery_2023_075mm.pmtiles" \
     "${DATA_DIR}/${DATASET_ID}.pmtiles" \
     --output "${DATA_DIR}/${DATASET_ID}.pmtiles.torrent" \
     --force
