@@ -1,4 +1,4 @@
-DATA_DIR="${HOME}/Projects/dataforcanada/decentralized-distribution-labs/data"
+DATA_DIR="${HOME}/Documents/Personal/Projects/dataforcanada//decentralized-distribution-labs/data"
 DATASET_ID="ca-ab_edmonton-2023A00054811061_orthoimagery_2023_075mm"
 CORES=$(nproc)
 
@@ -6,7 +6,6 @@ CORES=$(nproc)
 echo "Creating ${DATASET_ID}.pmtiles.torrent"
 py3createtorrent \
     --threads ${CORES} \
-    --private \
     --piece-length 16384 \
     --md5 \
     --source "Data for Canada" \
