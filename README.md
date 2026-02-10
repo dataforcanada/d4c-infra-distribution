@@ -10,7 +10,7 @@ flowchart TD
     end
 
     Sources[Open Data Sources]
-    Processes[Transformation Processes]
+    Processes[Transformation Pipelines]
     Artifacts[Systems-Ready Data]
     
     subgraph CoreInfra [Data for Canada Infrastructure]
@@ -50,22 +50,16 @@ flowchart TD
     a8@{animate: true, animation: slow}
 
     %% Mirror Connections
-    mirrors a12@--> Users
+    mirrors a12@--> Consumers
     a12@{animate: true, animation: slow}
-    
-    mirrors a13@--> Systems
-    a13@{animate: true, animation: slow}
     
     mirrors a9@-.->|Pooled| Torrent
     a9@{animate: true, animation: fast}
 
     %% Torrent Connections
-    Torrent a10@--> Users
+    Torrent a10@--> Consumers
     a10@{animate: true, animation: fast}
     
-    Torrent a11@--> Systems
-    a11@{animate: true, animation: fast}
-
     %% Click Actions
     click Sources "https://www.dataforcanada.org/#high-level-overview" _blank
     click Processes "https://www.dataforcanada.org/docs/processes/" _blank
@@ -131,7 +125,7 @@ graph TD
     BTNetwork(["P2P Network<br/>(Massive Data Pool)"])
 
     %% The Process Flow
-    Catalog -->|"1. Syncs metadata & identifies 'at-risk' data"| SmartNode
+    Catalog -->|"1. Syncs metadata"| SmartNode
     
     note["Note: The Node does NOT<br/>download the whole file."]
     SmartNode -.- note
