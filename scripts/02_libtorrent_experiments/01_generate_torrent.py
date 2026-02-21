@@ -4,7 +4,7 @@ import os
 import urllib.parse
 
 ### Edit Me ###
-DATA_DIR = "~/Documents/Personal/Projects/dataforcanada/decentralized-distribution-labs/data"
+DATA_DIR = "~/Documents/Personal/Projects/dataforcanada/d4c-infra-distribution/data"
 DATA_DIR = os.path.expanduser(DATA_DIR)
 TRACKER_URL = "https://tracker.labs.dataforcanada.org/announce"
 CREATOR = "Data for Canada"

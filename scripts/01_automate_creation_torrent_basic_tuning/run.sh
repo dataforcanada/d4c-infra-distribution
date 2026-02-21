@@ -1,4 +1,4 @@
-DATA_DIR="${HOME}/Documents/Personal/Projects/dataforcanada//decentralized-distribution-labs/data"
+DATA_DIR="${HOME}/Documents/Personal/Projects/dataforcanada/d4c-infra-distribution/data"
 CORES=$(nproc)
 
 # Piece length (16 MiB) based on https://academictorrents.com/docs/uploading.html
