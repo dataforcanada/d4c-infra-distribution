@@ -11,19 +11,15 @@ flowchart TD
         SourceCoop[Source Cooperative]
         Tigris[Tigris]
         Community[Community]
+        Cloudflare
         Zenodo[Zenodo]
         InternetArchive[Internet Archive]
+        Metadata[FAIR Data Catalogue]
     end
 
     Sources[Open Data Sources]
     Processes[Data Packages]
     Artifacts[Systems-Ready Data]
-    
-    subgraph CoreInfra [Infrastructure]
-        Portal[Object Storage]
-        Metadata[FAIR Data Catalogue]
-    end
-    
     P2P["P2P Technology"]
     
     subgraph Consumers [Consumption]
@@ -38,23 +34,31 @@ flowchart TD
     Processes a2@<--> Artifacts
     a2@{animate: true, animation: slow}
     
-    Artifacts a3@<--> CoreInfra
-    a3@{animate: true, animation: slow}
-    
-    Portal a4@<--> Metadata
-    a4@{animate: true, animation: fast}
-    
-    Metadata a5@<--> mirrors
-    a5@{animate: true, animation: fast}
+    Artifacts a3@<--> Metadata
+    a3@{animate: true, animation: fast}
 
-    CoreInfra a8@<-.->P2P
-    a8@{animate: true, animation: slow}
-
+    Metadata a20@<--> SourceCoop
+    a20@{animate: true, animation: slow}
+    Metadata a21@<--> Tigris
+    a21@{animate: true, animation: fast}
+    Metadata a22@<--> Community
+    a22@{animate: true, animation: fast}
+    Metadata a23@<--> Zenodo
+    a23@{animate: true, animation: slow}
+    Metadata a24@<--> Cloudflare
+    a24@{animate: true, animation: fast}
+    Metadata a25@<--> InternetArchive
+    a25@{animate: true, animation: slow}
+    
     %% Mirror Connections
     mirrors a12@<--> Consumers
     a12@{animate: true, animation: slow}
     
-    mirrors a9@<-.->|Pooled| P2P
+
+    %% Hint, the FAIR Data Catalogue can also be decentralized 🤯
+    %%Metadata a30@<--> P2P
+    %%a30@{animate: true, animation: fast}
+    mirrors a9@<--> P2P
     a9@{animate: true, animation: fast}
 
     %% P2P Connections
@@ -70,6 +74,7 @@ flowchart TD
     class Processes Processes
     style SourceCoop fill:#B71C1C,stroke:#7F0000,color:#FFFFFF
     style Tigris fill:#B71C1C,stroke:#7F0000,color:#FFFFFF
+    style Cloudflare fill:#FFB74D,stroke:#EF6C00,color:#000000
     style Zenodo fill:#FFB74D,stroke:#EF6C00,color:#000000
     style Community fill:#B71C1C,stroke:#7F0000,color:#FFFFFF
     style P2P fill:#B71C1C,stroke:#7F0000,color:#FFFFFF
@@ -79,7 +84,7 @@ flowchart TD
     
     %% Click Actions
 	click P2P "https://tixati.com/specs/bittorrent" _blank
-    click Tigris "https://www.tigrisdata.com/docs/overview/" _blank
+    click Tigris "https://d4c-pkgs.t3.storage.dev/" _blank
     click Sources "https://www.dataforcanada.org/#high-level-overview" _blank
     click Processes "https://www.dataforcanada.org/docs/d4c-pkgs/" _blank
     click Metadata "https://stac-utils.github.io/stac-geoparquet/latest/spec/stac-geoparquet-spec/" _blank
@@ -160,3 +165,4 @@ graph TD
     click Catalogue "https://stac-utils.github.io/stac-geoparquet/latest/spec/stac-geoparquet-spec/";
     click SmartNode "https://www.dataforcanada.org/infrastructure/";
 ```
+
