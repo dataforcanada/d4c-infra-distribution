@@ -6,9 +6,15 @@ import urllib.parse
 ### Edit Me ###
 DATA_DIR = "~/Documents/Personal/Projects/dataforcanada/d4c-infra-distribution/data/storage-no-cache/input"
 DATA_DIR = os.path.expanduser(DATA_DIR)
-TRACKER_URL = "udp://tracker.opentrackr.org:1337/announce"
+TRACKER_URLS = [
+    "https://tracker.iperson.xyz:443/announce",
+    "udp://tracker.opentrackr.org:1337/announce",
+    "udp://open.stealth.si:80/announce",
+    "udp://tracker.torrent.eu.org:451/announce",
+    "udp://explodie.org:6969/announce",
+]
 CREATOR = "Data for Canada"
-DATASET_ID = "ca-on_geospatial-ontario-2024A000235_d4c-datapkg-orthoimagery_2024_16cm_v0.0.1-beta"
+DATASET_ID = "ca-on_province_of_ontario-2024A000235_drape_eastern_ontario_orthoimagery_2024_16cm"
 TORRENT_COMMENT = "See more information at https://github.com/dataforcanada/d4c-datapkg-orthoimagery/issues/3#issuecomment-3867197437"
 
 # For this dataset, this should create a torrent with ~76,000 pieces
@@ -36,14 +42,14 @@ def generate_data_package_torrent(filepath, TORRENT_COMMENT, WEB_SEED_URLS):
     # Create torrent object with explicit piece size
     t = lt.create_torrent(fs, piece_size=PIECE_SIZE)
 
-    t.add_tracker(TRACKER_URL)
+    for tracker_url in TRACKER_URLS:
+        t.add_tracker(tracker_url)
     t.set_creator(CREATOR)
     t.set_comment(TORRENT_COMMENT)
     
-    # TODO: Add once Source Cooperative upload is complete
     # Add the HTTP web seed (where the data is)
-    #for seed_url in WEB_SEED_URLS:
-    #    t.add_url_seed(seed_url)
+    for seed_url in WEB_SEED_URLS:
+        t.add_url_seed(seed_url)
 
     # Hash the files
     msg = f"Hashing file(s). '{filepath}'"
