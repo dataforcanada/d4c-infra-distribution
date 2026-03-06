@@ -83,7 +83,7 @@ flowchart TD
     style Systems fill:#B71C1C,stroke:#7F0000,color:#FFFFFF
     
     %% Click Actions
-	click P2P "https://tixati.com/specs/bittorrent" _blank
+	click P2P "https://libp2p.io/" _blank
     click Tigris "https://d4c-pkgs.t3.storage.dev/" _blank
     click Sources "https://www.dataforcanada.org/#high-level-overview" _blank
     click Processes "https://www.dataforcanada.org/docs/d4c-pkgs/" _blank
@@ -110,7 +110,7 @@ Once data products reach a production-ready state, they enter a dissemination fl
 
 ### Decentralized Distribution
 
-We are piloting a <abbr title="Peer-to-Peer">P2P</abbr> technology, to maximize infrastructure resilience. By leveraging the [P2P HTTP  consumption feature](https://www.bittorrent.org/beps/bep_0019.html), users will be able to download simultaneously from Source Cooperative, Zenodo, Data for Canada infrastructure, and community peers. This ensures high availability without a single point of failure. Current laboratory work is available in the [d4c-infra-distribution](https://github.com/dataforcanada/d4c-infra-distribution).
+We are piloting a <abbr title="Peer-to-Peer">P2P</abbr> technology, to maximize infrastructure resilience. By leveraging the P2P HTTP  consumption feature, users will be able to download simultaneously from Source Cooperative, Zenodo, Data for Canada infrastructure, and community peers. This ensures high availability without a single point of failure. Current laboratory work is available in the [d4c-infra-distribution](https://github.com/dataforcanada/d4c-infra-distribution).
 
 ## 🏗️ Open Processing Architecture
 
@@ -165,4 +165,3 @@ graph TD
     click Catalogue "https://stac-utils.github.io/stac-geoparquet/latest/spec/stac-geoparquet-spec/";
     click SmartNode "https://www.dataforcanada.org/infrastructure/";
 ```
-
