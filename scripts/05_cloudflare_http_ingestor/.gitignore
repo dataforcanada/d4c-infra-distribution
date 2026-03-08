@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.wrangler/
+
+# Secret files – never commit
+.env
+.env.*
+!.env.example

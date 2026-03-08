@@ -1,0 +1,23 @@
+name = "cf-data-ingestor"
+main = "src/index.js"
+compatibility_date = "2026-03-08"
+routes = [
+  { pattern = "cf-data-ingestor.labs.dataforcanada.org", custom_domain = true }
+]
+
+# ------------------------------------------------------------------
+# Secrets (set via `wrangler secret put <NAME>`):
+#   AUTH_TOKEN
+#   AWS_ACCESS_KEY_ID
+#   AWS_SECRET_ACCESS_KEY
+# ------------------------------------------------------------------
+
+# Non-secret environment variables
+[vars]
+S3_BUCKET = "us-west-2.opendata.source.coop"
+S3_REGION = "us-west-2"
+S3_ENDPOINT = ""
+
+[placement]
+# TODO: parametize so user can specifically set where they want the worker to run
+mode = "smart"
