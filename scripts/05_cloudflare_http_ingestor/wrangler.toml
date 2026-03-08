@@ -21,3 +21,6 @@ S3_ENDPOINT = ""
 [placement]
 # TODO: parametize so user can specifically set where they want the worker to run
 mode = "smart"
+
+[observability]
+enabled = false

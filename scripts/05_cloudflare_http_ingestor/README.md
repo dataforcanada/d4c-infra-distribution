@@ -16,10 +16,13 @@ Client POST ──▶ Worker ──stream──▶ S3 PutObject / Multipart
 
 **Two upload paths are used automatically:**
 
-| Source provides `Content-Length`? | Upload method | Memory overhead |
+| Condition | Upload method | Memory overhead |
 |---|---|---|
-| Yes | Single streaming `PUT` | ~0 (pipe-through) |
-| No | Multipart upload in 5 MiB chunks | ≤ 5 MiB |
+| Known size ≤ 100 MiB | Single streaming `PUT` | ~0 (pipe-through) |
+| Unknown size **or** > 100 MiB | Multipart upload in 5 MiB chunks | ≤ 5 MiB |
+
+> Files larger than 100 MiB always use multipart upload because Cloudflare
+> Workers enforce a body-size limit on single outbound `fetch()` requests.
 
 ## Setup
 
