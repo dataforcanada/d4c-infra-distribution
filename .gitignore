@@ -1,1 +1,3 @@
 *.pmtiles
+.venv/
+.env
