@@ -23,4 +23,4 @@ S3_ENDPOINT = ""
 mode = "smart"
 
 [observability]
-enabled = false
+enabled = true
