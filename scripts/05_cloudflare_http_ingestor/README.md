@@ -12,6 +12,11 @@ Client POST ──▶ Worker ──stream──▶ S3 PutObject / Multipart
                   ├─ Auth check (Bearer token)
                   ├─ Fetch source URL (custom User-Agent)
                   └─ Sign with AWS Sig V4 (aws4fetch)
+
+Client PUT  ──▶ Worker ──stream──▶ S3 PutObject / Multipart
+                  │
+                  ├─ Auth check (Bearer token)
+                  └─ Direct binary upload (X-S3-Key header)
 ```
 
 **Two upload paths are used automatically:**
@@ -19,7 +24,7 @@ Client POST ──▶ Worker ──stream──▶ S3 PutObject / Multipart
 | Condition | Upload method | Memory overhead |
 |---|---|---|
 | Known size ≤ 100 MiB | Single streaming `PUT` | ~0 (pipe-through) |
-| Unknown size **or** > 100 MiB | Multipart upload in 5 MiB chunks | ≤ 5 MiB |
+| Unknown size **or** > 100 MiB | Multipart upload in 25 MiB chunks | ≤ 25 MiB |
 
 > Files larger than 100 MiB always use multipart upload because Cloudflare
 > Workers enforce a body-size limit on single outbound `fetch()` requests.
@@ -78,7 +83,9 @@ pnpm run deploy
 
 ## Usage
 
-### Request
+### Download mode (POST)
+
+Downloads a file from a URL and uploads it to S3.
 
 **Method:** `POST`
 **Content-Type:** `application/json`
@@ -92,10 +99,10 @@ pnpm run deploy
 | `user_agent` | Yes | User-Agent string for the download request |
 | `key_prefix` | No | Destination path within the S3 bucket |
 
-### Example
+#### Example
 
 ```bash
-curl -X POST https://cf-data-ingestor.<your-subdomain>.workers.dev \
+curl -X POST https://cf-data-ingestor.labs.dataforcanada.org \
   -H "Authorization: Bearer <AUTH_TOKEN>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -105,29 +112,102 @@ curl -X POST https://cf-data-ingestor.<your-subdomain>.workers.dev \
   }'
 ```
 
-### Successful response
+#### Successful response
 
 ```json
 {
     "ok": true,
     "bucket": "us-west-2.opendata.source.coop",
-    "key": "dataforcanada/d4c-datapkg-orthoimagery/archive/ca-qc_government_and_municipalities_of_quebec-2026A000224_d4c-datapkg-orthoimagery_orthorectified_imagery_from_quebec/mos_14_31n02_se_30cm_f09.JP2",
+    "key": "dataforcanada/d4c-datapkg-orthoimagery/archive/ca-qc_government_and_municipalities_of_quebec-2026A000224_d4c-datapkg-orthoimagery_orthorectified_imagery_from_quebecdataforcanada/.../mos_14_31n02_se_30cm_f09.JP2",
     "content_type": "application/x-msdownload",
-    "size_bytes": 773722941
+    "size_bytes": 773722941,
+    "etag": "abc123def456",
+    "multipart_part_size": 26214400,
+    "multipart_number_parts": 30,
+    "started_at": "2026-03-12T21:00:00.000Z",
+    "finished_at": "2026-03-12T21:01:30.000Z"
 }
 ```
+
+> `multipart_part_size` and `multipart_number_parts` are only present when multipart upload was used (file > 100 MiB or unknown size).
+
+### Direct upload mode (PUT)
+
+Uploads a binary file body directly to S3. Useful for uploading local files
+(e.g. Parquet artifacts) without needing a public download URL.
+
+**Method:** `PUT`
+**Authorization:** `Bearer <AUTH_TOKEN>`
+
+**Required headers:**
+
+| Header | Description |
+|---|---|
+| `X-S3-Key` | Full S3 object key (e.g. `dataforcanada/my-dataset/data.parquet`) |
+
+**Optional headers:**
+
+| Header | Description |
+|---|---|
+| `Content-Type` | MIME type (default: `application/octet-stream`) |
+| `Content-Length` | File size in bytes (enables single PUT for files ≤ 100 MiB) |
+
+**Body:** Raw binary file content.
+
+#### Example
+
+```bash
+curl -X PUT https://cf-data-ingestor.labs.dataforcanada.org \
+  -H "Authorization: Bearer <AUTH_TOKEN>" \
+  -H "X-S3-Key: dataforcanada/my-dataset/downloads.parquet" \
+  -H "Content-Type: application/octet-stream" \
+  -H "Content-Length: $(stat -c%s downloads.parquet)" \
+  --data-binary @downloads.parquet
+```
+
+#### Successful response
+
+```json
+{
+    "ok": true,
+    "bucket": "us-west-2.opendata.source.coop",
+    "key": "dataforcanada/my-dataset/downloads.parquet",
+    "content_type": "application/octet-stream",
+    "size_bytes": 45231,
+    "etag": "def456abc789",
+    "started_at": "2026-03-12T21:00:00.000Z",
+    "finished_at": "2026-03-12T21:00:01.000Z"
+}
+```
+
+### Response fields
+
+| Field | Type | Always present | Description |
+|---|---|---|---|
+| `ok` | boolean | Yes | `true` on success |
+| `bucket` | string | Yes | S3 bucket name |
+| `key` | string | Yes | S3 object key |
+| `content_type` | string | Yes | MIME type of the uploaded file |
+| `size_bytes` | number | When Content-Length known | File size in bytes |
+| `etag` | string | When available | S3 ETag (quotes stripped) |
+| `multipart_part_size` | number | Only for multipart | Part size in bytes (25 MiB) |
+| `multipart_number_parts` | number | Only for multipart | Number of parts uploaded |
+| `started_at` | string | Yes | ISO-8601 UTC timestamp when processing started |
+| `finished_at` | string | Yes | ISO-8601 UTC timestamp when processing finished |
 
 ### Error responses
 
 | Status | Meaning |
 |--------|---------|
 | 401 | Missing or invalid Bearer token |
-| 405 | Non-POST method |
-| 415 | Content-Type is not `application/json` |
-| 400 | Malformed JSON or missing fields |
+| 405 | Non-POST/PUT method |
+| 415 | Content-Type is not `application/json` (POST only) |
+| 400 | Malformed JSON, missing fields, or missing `X-S3-Key` header |
 | 502 | Source download or S3 upload failed |
 
 ## S3 Object Key
+
+### POST mode
 
 Only the **filename** is extracted from the `download_url` and placed under the `key_prefix`. The source URL's directory hierarchy is not preserved.
 
@@ -139,10 +219,14 @@ key_prefix:   "dataforcanada/d4c-datapkg-orthoimagery/archive/ca-qc_government_a
 
 If `key_prefix` is omitted or empty, the file uploads to the bucket root.
 
+### PUT mode
+
+The full S3 key is specified directly via the `X-S3-Key` header.
+
 ## Local Development
 
 ```bash
 pnpm run dev
 ```
 
-Then POST to `http://localhost:8787`. Wrangler reads secrets from the `.env` file you created in step 3. You can also create environment-specific overrides (e.g. `.env.staging`) — see the [Cloudflare docs](https://developers.cloudflare.com/workers/configuration/secrets/#local-development-with-secrets) for the full `.env` precedence rules.
+Then POST or PUT to `http://localhost:8787`. Wrangler reads secrets from the `.env` file you created in step 3. You can also create environment-specific overrides (e.g. `.env.staging`) — see the [Cloudflare docs](https://developers.cloudflare.com/workers/configuration/secrets/#local-development-with-secrets) for the full `.env` precedence rules.
