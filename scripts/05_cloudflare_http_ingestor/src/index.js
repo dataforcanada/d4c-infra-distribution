@@ -3,8 +3,7 @@ import { AwsClient } from "aws4fetch";
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-const MIN_PART_SIZE = 25 * 1024 * 1024; // 25 MiB – keeps memory bounded on CF Workers (128 MiB limit)
-const MAX_SINGLE_PUT_SIZE = 100 * 1024 * 1024; // 100 MiB – above this, always use multipart
+const MIN_PART_SIZE = 5 * 1024 * 1024; // 5 MiB – keeps memory well within CF Workers 128 MiB limit
 const MAX_RETRIES = 3;
 const RETRY_BASE_DELAY_MS = 1000; // 1 second, doubles each retry
 
@@ -97,40 +96,6 @@ function isRetryable(err) {
 function cleanEtag(etag) {
   if (!etag) return null;
   return etag.replace(/^"/, "").replace(/"$/, "");
-}
-
-// ---------------------------------------------------------------------------
-// S3 Upload – Single PUT (streaming, requires known Content-Length)
-// ---------------------------------------------------------------------------
-
-async function putObjectStreaming(aws, bucket, region, key, body, contentLength, contentType, endpoint) {
-  const url = s3Url(bucket, key, region, endpoint);
-  console.log(`[putObjectStreaming] URL: ${url}`);
-  console.log(`[putObjectStreaming] Content-Type: ${contentType}, Content-Length: ${contentLength}`);
-
-  const headers = {
-    "Content-Type": contentType || "application/octet-stream",
-    "Content-Length": String(contentLength),
-    "x-amz-acl": "bucket-owner-full-control",
-    "x-amz-content-sha256": "UNSIGNED-PAYLOAD",
-  };
-
-  console.log(`[putObjectStreaming] Sending PUT request...`);
-  const resp = await aws.fetch(url, {
-    method: "PUT",
-    headers,
-    body, // ReadableStream – streamed directly, no buffering
-  });
-
-  console.log(`[putObjectStreaming] Response status: ${resp.status}`);
-  if (!resp.ok) {
-    const text = await resp.text();
-    console.error(`[putObjectStreaming] S3 PUT error body: ${text}`);
-    throw new Error(`S3 PUT failed (${resp.status}): ${text}`);
-  }
-  const etag = resp.headers.get("ETag");
-  console.log(`[putObjectStreaming] PUT succeeded, ETag: ${etag}`);
-  return { resp, etag: cleanEtag(etag) };
 }
 
 // ---------------------------------------------------------------------------
@@ -332,28 +297,22 @@ async function multipartStreamUpload(aws, bucket, region, key, stream, contentTy
 }
 
 // ---------------------------------------------------------------------------
-// Unified upload helper – decides single PUT vs multipart
+// Unified upload helper – always uses multipart to keep memory bounded
 // ---------------------------------------------------------------------------
 
 /**
- * Upload a ReadableStream to S3, choosing single PUT or multipart based on
- * the known content length.
+ * Upload a ReadableStream to S3 using multipart upload.
+ * Always uses multipart (even for small files) to keep peak memory at ~5 MiB,
+ * well within the Cloudflare Workers 128 MiB limit.
  *
- * Returns { etag, useMultipart, totalParts }.
+ * Returns { etag, totalParts }.
  */
 async function doUpload(aws, bucket, region, key, stream, contentType, contentLength, endpoint) {
   const numericLength = contentLength ? Number(contentLength) : 0;
-  const useMultipart = !numericLength || numericLength > MAX_SINGLE_PUT_SIZE;
+  console.log(`[doUpload] key=${key}, strategy=multipart (size: ${numericLength || "unknown"})`);
 
-  console.log(`[doUpload] key=${key}, strategy=${useMultipart ? `multipart (size: ${numericLength || "unknown"})` : `single PUT (${numericLength} bytes)`}`);
-
-  if (!useMultipart) {
-    const result = await putObjectStreaming(aws, bucket, region, key, stream, contentLength, contentType, endpoint);
-    return { etag: result.etag, useMultipart: false, totalParts: 0 };
-  } else {
-    const result = await multipartStreamUpload(aws, bucket, region, key, stream, contentType, endpoint);
-    return { etag: result.etag, useMultipart: true, totalParts: result.totalParts };
-  }
+  const result = await multipartStreamUpload(aws, bucket, region, key, stream, contentType, endpoint);
+  return { etag: result.etag, totalParts: result.totalParts };
 }
 
 // ---------------------------------------------------------------------------
@@ -496,10 +455,8 @@ async function handleDownloadAndUpload(request, env, requestId) {
       content_type: sourceContentType,
       ...(sizeBytes !== null ? { size_bytes: sizeBytes } : {}),
       ...(uploadResult.etag ? { etag: uploadResult.etag } : {}),
-      ...(uploadResult.useMultipart ? {
-        multipart_part_size: MIN_PART_SIZE,
-        multipart_number_parts: uploadResult.totalParts,
-      } : {}),
+      multipart_part_size: MIN_PART_SIZE,
+      multipart_number_parts: uploadResult.totalParts,
       started_at: startedAt,
       finished_at: finishedAt,
     });
@@ -568,10 +525,8 @@ async function handleDirectUpload(request, env, requestId) {
       content_type: contentType,
       ...(sizeBytes !== null ? { size_bytes: sizeBytes } : {}),
       ...(uploadResult.etag ? { etag: uploadResult.etag } : {}),
-      ...(uploadResult.useMultipart ? {
-        multipart_part_size: MIN_PART_SIZE,
-        multipart_number_parts: uploadResult.totalParts,
-      } : {}),
+      multipart_part_size: MIN_PART_SIZE,
+      multipart_number_parts: uploadResult.totalParts,
       started_at: startedAt,
       finished_at: finishedAt,
     });

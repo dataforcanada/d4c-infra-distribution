@@ -2,7 +2,9 @@
 
 A Cloudflare Worker that acts as a secure proxy: it downloads a file from a
 URL provided in a JSON payload and streams it directly into an S3 bucket in
-`us-west-2`, keeping memory usage constant regardless of file size.
+`us-west-2`, keeping memory usage constant regardless of file size. All uploads
+use multipart upload with 5 MiB chunks to stay well within the Workers 128 MiB
+memory limit.
 
 ## Architecture
 
@@ -19,15 +21,10 @@ Client PUT  ──▶ Worker ──stream──▶ S3 PutObject / Multipart
                   └─ Direct binary upload (X-S3-Key header)
 ```
 
-**Two upload paths are used automatically:**
-
-| Condition | Upload method | Memory overhead |
-|---|---|---|
-| Known size ≤ 100 MiB | Single streaming `PUT` | ~0 (pipe-through) |
-| Unknown size **or** > 100 MiB | Multipart upload in 25 MiB chunks | ≤ 25 MiB |
-
-> Files larger than 100 MiB always use multipart upload because Cloudflare
-> Workers enforce a body-size limit on single outbound `fetch()` requests.
+**All uploads use S3 multipart upload with 5 MiB parts**, keeping peak memory
+bounded to ~5 MiB regardless of file size. This avoids hitting the Cloudflare
+Workers 128 MiB memory limit that can occur when buffering large single PUT
+request bodies.
 
 ## Setup
 
@@ -122,14 +119,14 @@ curl -X POST https://cf-data-ingestor.labs.dataforcanada.org \
     "content_type": "application/x-msdownload",
     "size_bytes": 773722941,
     "etag": "abc123def456",
-    "multipart_part_size": 26214400,
-    "multipart_number_parts": 30,
+    "multipart_part_size": 5242880,
+    "multipart_number_parts": 148,
     "started_at": "2026-03-12T21:00:00.000Z",
     "finished_at": "2026-03-12T21:01:30.000Z"
 }
 ```
 
-> `multipart_part_size` and `multipart_number_parts` are only present when multipart upload was used (file > 100 MiB or unknown size).
+> `multipart_part_size` and `multipart_number_parts` are always present since all uploads use multipart.
 
 ### Direct upload mode (PUT)
 
@@ -150,7 +147,7 @@ Uploads a binary file body directly to S3. Useful for uploading local files
 | Header | Description |
 |---|---|
 | `Content-Type` | MIME type (default: `application/octet-stream`) |
-| `Content-Length` | File size in bytes (enables single PUT for files ≤ 100 MiB) |
+| `Content-Length` | File size in bytes |
 
 **Body:** Raw binary file content.
 
@@ -190,8 +187,8 @@ curl -X PUT https://cf-data-ingestor.labs.dataforcanada.org \
 | `content_type` | string | Yes | MIME type of the uploaded file |
 | `size_bytes` | number | When Content-Length known | File size in bytes |
 | `etag` | string | When available | S3 ETag (quotes stripped) |
-| `multipart_part_size` | number | Only for multipart | Part size in bytes (25 MiB) |
-| `multipart_number_parts` | number | Only for multipart | Number of parts uploaded |
+| `multipart_part_size` | number | Yes | Part size in bytes (5 MiB) |
+| `multipart_number_parts` | number | Yes | Number of parts uploaded |
 | `started_at` | string | Yes | ISO-8601 UTC timestamp when processing started |
 | `finished_at` | string | Yes | ISO-8601 UTC timestamp when processing finished |
 

@@ -20,8 +20,8 @@ S3_ENDPOINT = ""
 
 [placement]
 # TODO: parametize so user can specifically set where they want the worker to run
-#mode = "smart"
-hostname = "diffusion.mern.gouv.qc.ca"
+mode = "smart"
+#hostname = "diffusion.mern.gouv.qc.ca"
 
 [observability]
 enabled = true
