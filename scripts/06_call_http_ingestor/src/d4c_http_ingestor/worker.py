@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import random
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -21,7 +23,12 @@ class WorkerResult:
     key: str | None = None
     content_type: str | None = None
     size_bytes: int | None = None
+    etag: str | None = None
     error: str | None = None
+    multipart_part_size: int | None = None
+    multipart_number_parts: int | None = None
+    started_at: str | None = None
+    finished_at: str | None = None
 
 
 async def call_worker(
@@ -49,6 +56,8 @@ async def call_worker(
         "Content-Type": "application/json",
     }
 
+    started = datetime.now(timezone.utc).isoformat()
+
     try:
         resp = await client.post(
             worker_url,
@@ -67,6 +76,11 @@ async def call_worker(
                 key=body.get("key"),
                 content_type=body.get("content_type"),
                 size_bytes=body.get("size_bytes"),
+                etag=body.get("etag"),
+                multipart_part_size=body.get("multipart_part_size"),
+                multipart_number_parts=body.get("multipart_number_parts"),
+                started_at=body.get("started_at"),
+                finished_at=body.get("finished_at"),
             )
         else:
             return WorkerResult(
@@ -74,13 +88,15 @@ async def call_worker(
                 ok=False,
                 http_status=resp.status_code,
                 error=body.get("error", resp.text),
+                started_at=body.get("started_at"),
+                finished_at=body.get("finished_at"),
             )
     except httpx.TimeoutException as exc:
-        return WorkerResult(url=download_url, ok=False, error=f"Timeout: {exc}")
+        return WorkerResult(url=download_url, ok=False, error=f"Timeout: {exc}", started_at=started)
     except httpx.HTTPError as exc:
-        return WorkerResult(url=download_url, ok=False, error=f"HTTP error: {exc}")
+        return WorkerResult(url=download_url, ok=False, error=f"HTTP error: {exc}", started_at=started)
     except Exception as exc:  # noqa: BLE001
-        return WorkerResult(url=download_url, ok=False, error=str(exc))
+        return WorkerResult(url=download_url, ok=False, error=str(exc), started_at=started)
 
 
 async def call_worker_with_retries(
@@ -121,3 +137,71 @@ async def call_worker_with_retries(
 
     assert last_result is not None  # noqa: S101
     return last_result
+
+
+async def upload_file_to_worker(
+    client: httpx.AsyncClient,
+    *,
+    worker_url: str,
+    auth_token: str,
+    file_path: Path,
+    s3_key: str,
+    content_type: str = "application/octet-stream",
+    timeout: float = 120.0,
+) -> WorkerResult:
+    """Upload a local file directly to S3 via the worker PUT endpoint.
+
+    Reads the file and sends it as a PUT request body with the ``X-S3-Key``
+    header specifying the destination S3 object key.
+    """
+    headers = {
+        "Authorization": f"Bearer {auth_token}",
+        "X-S3-Key": s3_key,
+        "Content-Type": content_type,
+    }
+
+    try:
+        file_size = file_path.stat().st_size
+        headers["Content-Length"] = str(file_size)
+
+        with open(file_path, "rb") as fh:
+            file_bytes = fh.read()
+
+        resp = await client.put(
+            worker_url,
+            content=file_bytes,
+            headers=headers,
+            timeout=timeout,
+        )
+        body: dict[str, Any] = resp.json()
+
+        if resp.is_success and body.get("ok"):
+            return WorkerResult(
+                url=str(file_path),
+                ok=True,
+                http_status=resp.status_code,
+                bucket=body.get("bucket"),
+                key=body.get("key"),
+                content_type=body.get("content_type"),
+                size_bytes=body.get("size_bytes"),
+                etag=body.get("etag"),
+                multipart_part_size=body.get("multipart_part_size"),
+                multipart_number_parts=body.get("multipart_number_parts"),
+                started_at=body.get("started_at"),
+                finished_at=body.get("finished_at"),
+            )
+        else:
+            return WorkerResult(
+                url=str(file_path),
+                ok=False,
+                http_status=resp.status_code,
+                error=body.get("error", resp.text),
+                started_at=body.get("started_at"),
+                finished_at=body.get("finished_at"),
+            )
+    except httpx.TimeoutException as exc:
+        return WorkerResult(url=str(file_path), ok=False, error=f"Timeout: {exc}")
+    except httpx.HTTPError as exc:
+        return WorkerResult(url=str(file_path), ok=False, error=f"HTTP error: {exc}")
+    except Exception as exc:  # noqa: BLE001
+        return WorkerResult(url=str(file_path), ok=False, error=str(exc))

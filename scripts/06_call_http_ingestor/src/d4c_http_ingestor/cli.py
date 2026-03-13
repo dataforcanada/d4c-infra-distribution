@@ -10,7 +10,6 @@ import argparse
 import asyncio
 import os
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
@@ -26,18 +25,19 @@ from rich.progress import (
 
 from d4c_http_ingestor.db import DownloadRow, DownloadsDB
 from d4c_http_ingestor.parquet import export_parquet
-from d4c_http_ingestor.worker import call_worker_with_retries
+from d4c_http_ingestor.worker import call_worker_with_retries, upload_file_to_worker
 
 console = Console()
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Constants
 # ---------------------------------------------------------------------------
 
+EXPORT_EVERY_N = 100  # Export + upload Parquet every N successful downloads
 
-def _utcnow() -> str:
-    """Return the current UTC time as an ISO-8601 string."""
-    return datetime.now(timezone.utc).isoformat()
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 
 def _read_urls(path: str) -> list[str]:
@@ -56,6 +56,50 @@ def _read_urls(path: str) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
+async def _export_and_upload(
+    db: DownloadsDB,
+    client: httpx.AsyncClient,
+    *,
+    out_stem: str,
+    worker_url: str,
+    auth_token: str,
+    key_prefix: str,
+) -> None:
+    """Export the SQLite DB to Parquet and upload it to S3 via the worker."""
+    rows = db.all_rows()
+    if not rows:
+        return
+
+    parquet_path = export_parquet(rows, out_stem)
+    parquet_filename = parquet_path.name
+    s3_key = (
+        f"{key_prefix.rstrip('/')}/{parquet_filename}"
+        if key_prefix
+        else parquet_filename
+    )
+
+    console.print(
+        f"  [cyan]Uploading[/] {parquet_filename} → s3://…/{s3_key}"
+    )
+    result = await upload_file_to_worker(
+        client,
+        worker_url=worker_url,
+        auth_token=auth_token,
+        file_path=parquet_path,
+        s3_key=s3_key,
+        content_type="application/vnd.apache.parquet",
+    )
+    if result.ok:
+        console.print(
+            f"  [green]✓[/] Parquet uploaded ({len(rows)} rows, "
+            f"{parquet_path.stat().st_size:,} bytes)"
+        )
+    else:
+        console.print(
+            f"  [red]✗[/] Parquet upload failed: {result.error}"
+        )
+
+
 async def _process_urls(
     urls: list[str],
     *,
@@ -64,18 +108,45 @@ async def _process_urls(
     worker_url: str,
     auth_token: str,
     key_prefix: str,
+    out_stem: str,
     concurrency: int,
     timeout: float,
     max_retries: int,
     progress: Progress,
     task_id: int,
 ) -> None:
-    """Submit *urls* to the worker with bounded concurrency."""
-    sem = asyncio.Semaphore(concurrency)
+    """Submit *urls* to the worker with bounded concurrency.
 
-    async def _handle(client: httpx.AsyncClient, url: str) -> None:
-        async with sem:
-            started = _utcnow()
+    Uses a fixed-size worker pool so that exactly *concurrency* requests
+    are in-flight at any time.  As soon as one request completes, the
+    next URL is picked up immediately — no idle slots.
+
+    Every :data:`EXPORT_EVERY_N` successful downloads, the SQLite database
+    is exported to Parquet and uploaded to S3 via the worker's PUT endpoint.
+    """
+    queue: asyncio.Queue[str | None] = asyncio.Queue()
+
+    # Seed the queue with every URL to process.
+    for url in urls:
+        queue.put_nowait(url)
+
+    # Sentinel values – one per worker – so they know when to stop.
+    for _ in range(concurrency):
+        queue.put_nowait(None)
+
+    # Shared mutable state protected by a lock.
+    success_count = 0
+    export_lock = asyncio.Lock()
+
+    async def _worker(client: httpx.AsyncClient) -> None:
+        """Pull URLs from the queue until a ``None`` sentinel is received."""
+        nonlocal success_count
+
+        while True:
+            url = await queue.get()
+            if url is None:
+                return
+
             user_agent = f"Data for Canada - {dataset_id}"
 
             result = await call_worker_with_retries(
@@ -89,27 +160,59 @@ async def _process_urls(
                 max_retries=max_retries,
             )
 
-            finished = _utcnow()
+            # Use started_at/finished_at from the worker response
             row = DownloadRow(
                 url=url,
                 dataset_id=dataset_id,
                 status="success" if result.ok else "failed",
                 http_status=result.http_status,
+                etag=result.etag,
                 error=result.error,
-                started_at=started,
-                finished_at=finished,
+                started_at=result.started_at or "",
+                finished_at=result.finished_at,
+                multipart_part_size=result.multipart_part_size,
+                multipart_number_parts=result.multipart_number_parts,
             )
             db.upsert(row)
             progress.advance(task_id)
 
-    # Use a single shared httpx client with generous limits
+            # Periodic Parquet export + upload every N successes
+            if result.ok:
+                async with export_lock:
+                    success_count += 1
+                    if success_count % EXPORT_EVERY_N == 0:
+                        console.print(
+                            f"\n  [yellow]Checkpoint[/]: {success_count} "
+                            f"successes — exporting Parquet…"
+                        )
+                        await _export_and_upload(
+                            db,
+                            client,
+                            out_stem=out_stem,
+                            worker_url=worker_url,
+                            auth_token=auth_token,
+                            key_prefix=key_prefix,
+                        )
+
+    # Use a single shared httpx client with generous limits.
     limits = httpx.Limits(
         max_connections=concurrency + 4,
         max_keepalive_connections=concurrency,
     )
     async with httpx.AsyncClient(limits=limits, follow_redirects=True) as client:
-        tasks = [asyncio.create_task(_handle(client, u)) for u in urls]
-        await asyncio.gather(*tasks)
+        workers = [asyncio.create_task(_worker(client)) for _ in range(concurrency)]
+        await asyncio.gather(*workers)
+
+        # Final export + upload after all URLs are processed
+        console.print("\n  [yellow]Final export[/]: exporting Parquet…")
+        await _export_and_upload(
+            db,
+            client,
+            out_stem=out_stem,
+            worker_url=worker_url,
+            auth_token=auth_token,
+            key_prefix=key_prefix,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -154,8 +257,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--out",
-        default="parquet/",
-        help="Output directory for the Parquet artifact (default: parquet/).",
+        required=True,
+        help=(
+            "Parquet output filename stem. For example, "
+            "'--out my-dataset' creates 'my-dataset.parquet' in the "
+            "current working directory."
+        ),
     )
     p.add_argument(
         "--concurrency",
@@ -252,6 +359,7 @@ def main(argv: list[str] | None = None) -> None:
                         worker_url=args.worker_url,
                         auth_token=args.auth_token,
                         key_prefix=args.key_prefix,
+                        out_stem=args.out,
                         concurrency=args.concurrency,
                         timeout=args.timeout,
                         max_retries=args.max_retries,
@@ -269,7 +377,7 @@ def main(argv: list[str] | None = None) -> None:
             )
             console.print(f"  [{colour}]{status}[/]: {cnt}")
 
-        # -- Export Parquet --------------------------------------------------
+        # -- Final local Parquet export (no upload — already done above) -----
         rows = db.all_rows()
         if rows:
             dest = export_parquet(rows, args.out)

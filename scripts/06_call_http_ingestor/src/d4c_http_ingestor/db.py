@@ -19,9 +19,12 @@ class DownloadRow:
     dataset_id: str
     status: str  # success | failed | skipped
     http_status: int | None = None
+    etag: str | None = None
     error: str | None = None
     started_at: str = ""
     finished_at: str | None = None
+    multipart_part_size: int | None = None
+    multipart_number_parts: int | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -30,13 +33,16 @@ class DownloadRow:
 
 _SCHEMA_SQL = """\
 CREATE TABLE IF NOT EXISTS downloads (
-  url              TEXT PRIMARY KEY,
-  dataset_id       TEXT NOT NULL,
-  status           TEXT NOT NULL,
-  http_status      INTEGER,
-  error            TEXT,
-  started_at       TEXT NOT NULL,
-  finished_at      TEXT
+  url                    TEXT PRIMARY KEY,
+  dataset_id             TEXT NOT NULL,
+  status                 TEXT NOT NULL,
+  http_status            INTEGER,
+  etag                   TEXT,
+  error                  TEXT,
+  started_at             TEXT NOT NULL,
+  finished_at            TEXT,
+  multipart_part_size    INTEGER,
+  multipart_number_parts INTEGER
 );
 CREATE INDEX IF NOT EXISTS ix_downloads_dataset ON downloads(dataset_id);
 CREATE INDEX IF NOT EXISTS ix_downloads_status  ON downloads(status);
@@ -82,21 +88,39 @@ class DownloadsDB:
         )
         return [r["url"] for r in cur.fetchall()]
 
+    def count_successful(self) -> int:
+        """Return the number of rows with status ``success``."""
+        cur = self._conn.execute(
+            "SELECT COUNT(*) AS cnt FROM downloads WHERE status = 'success'"
+        )
+        return cur.fetchone()["cnt"]
+
     # -- mutations -----------------------------------------------------------
 
     def upsert(self, row: DownloadRow) -> None:
         """Insert or replace a download row."""
         self._conn.execute(
             """\
-            INSERT INTO downloads (url, dataset_id, status, http_status, error, started_at, finished_at)
-            VALUES (:url, :dataset_id, :status, :http_status, :error, :started_at, :finished_at)
+            INSERT INTO downloads (
+                url, dataset_id, status, http_status, etag, error,
+                started_at, finished_at,
+                multipart_part_size, multipart_number_parts
+            )
+            VALUES (
+                :url, :dataset_id, :status, :http_status, :etag, :error,
+                :started_at, :finished_at,
+                :multipart_part_size, :multipart_number_parts
+            )
             ON CONFLICT(url) DO UPDATE SET
-                dataset_id  = excluded.dataset_id,
-                status      = excluded.status,
-                http_status = excluded.http_status,
-                error       = excluded.error,
-                started_at  = excluded.started_at,
-                finished_at = excluded.finished_at
+                dataset_id             = excluded.dataset_id,
+                status                 = excluded.status,
+                http_status            = excluded.http_status,
+                etag                   = excluded.etag,
+                error                  = excluded.error,
+                started_at             = excluded.started_at,
+                finished_at            = excluded.finished_at,
+                multipart_part_size    = excluded.multipart_part_size,
+                multipart_number_parts = excluded.multipart_number_parts
             """,
             row.__dict__,
         )
