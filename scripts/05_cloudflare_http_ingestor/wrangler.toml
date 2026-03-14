@@ -18,10 +18,10 @@ S3_BUCKET = "us-west-2.opendata.source.coop"
 S3_REGION = "us-west-2"
 S3_ENDPOINT = ""
 
-[placement]
 # TODO: parametize so user can specifically set where they want the worker to run
-mode = "smart"
-#hostname = "diffusion.mern.gouv.qc.ca"
+[placement]
+hostname = "diffusion.mern.gouv.qc.ca"
+#mode = "smart"
 
 [observability]
 enabled = true

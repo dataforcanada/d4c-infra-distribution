@@ -1,3 +1,4 @@
 *.pmtiles
 .venv/
 .env
+*.sqlite
